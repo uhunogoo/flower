@@ -1,253 +1,283 @@
-import './style.css'
-import * as dat from 'dat.gui'
-import * as THREE from 'three'
+import * as THREE from 'three';
 
-import gsap from 'gsap'
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-gsap.registerPlugin(ScrollTrigger);
+import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { GUI } from 'dat.gui'
 
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+let camera, scene, renderer;
 
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass'
-import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js'
+const api = {
+    count: 2000,
+    distribution: 'random',
+    resample: resample,
+    surfaceColor: 0xFFF784,
+    backgroundColor: 0xE39469,
 
-/**
- * Base
- */
-// Debug
-const degubObject = {}
-const gui = new dat.GUI({
-    width: 400
-})
+};
 
-// Canvas
-const canvas = document.querySelector('canvas.webgl')
+let stemMesh, blossomMesh;
+let stemGeometry, blossomGeometry;
+let stemMaterial, blossomMaterial;
 
-// Scene
-const scene = new THREE.Scene()
+let sampler;
+const count = api.count;
+const ages = new Float32Array( count );
+const scales = new Float32Array( count );
+const dummy = new THREE.Object3D();
 
-/**
- * Loaders
- */
-// Texture loader
-const textureLoader = new THREE.TextureLoader()
+const _position = new THREE.Vector3();
+const _normal = new THREE.Vector3();
+const _scale = new THREE.Vector3();
 
-// Draco loader
-const dracoLoader = new DRACOLoader()
-dracoLoader.setDecoderPath('draco/')
+// let surfaceGeometry = new THREE.BoxGeometry( 10, 10, 10 ).toNonIndexed();
+const surfaceGeometry = new THREE.TorusKnotGeometry( 10, 3, 100, 16 ).toNonIndexed();
+const surfaceMaterial = new THREE.MeshLambertMaterial( { color: api.surfaceColor, wireframe: false } );
+const surface = new THREE.Mesh( surfaceGeometry, surfaceMaterial );
 
-// GLTF loader
-const gltfLoader = new GLTFLoader()
-gltfLoader.setDRACOLoader(dracoLoader)
+// Source: https://gist.github.com/gre/1650294
+const easeOutCubic = function ( t ) {
 
-/**
- * Object
- */
-let mixer = null
-let plants = new THREE.Group()
-gltfLoader.load('plants.gltf', (model) => {
-    let flower = model.scene.children[0]
-    console.log(flower);
-    flower.position.y = -1
+    return ( -- t ) * t * t + 1;
 
-    mixer = new THREE.AnimationMixer(model.scene)
-    const action = mixer.clipAction(model.animations[0])
-    const animationDuration = model.animations[0].duration
-    action.play()
-    
-    plants.add(flower)
+};
 
-    gsap.timeline({
-        scrollTrigger: {
-            trigger: 'body',
-            start: 'top top',
-            end: 'bottom bottom',
-            scrub: .1,
-            duration: 2.9,
-            markers: true,
-            onUpdate: self => {
-                const progress = self.progress.toFixed(3)
+// Scaling curve causes particles to grow quickly, ease gradually into full scale, then
+// disappear quickly. More of the particle's lifetime is spent around full scale.
+const scaleCurve = function ( t ) {
 
-                // animation part
-                flower.rotation.y = Math.PI * 0.7 * progress
-                plants.rotation.x = Math.PI * 0.15 * progress
-                mixer.setTime( (animationDuration * 0.5) * (1.0 - progress) )
-            }
+    return Math.abs( easeOutCubic( ( t > 0.5 ? 1 - t : t ) * 2 ) );
+
+};
+
+const loader = new GLTFLoader();
+
+loader.load( 'flower.glb', function ( gltf ) {
+
+    const _stemMesh = gltf.scene.getObjectByName( 'Stem' );
+    const _blossomMesh = gltf.scene.getObjectByName( 'Blossom' );
+
+    stemGeometry = _stemMesh.geometry.clone();
+    blossomGeometry = _blossomMesh.geometry.clone();
+
+    const defaultTransform = new THREE.Matrix4()
+        .makeRotationX( Math.PI )
+        .multiply( new THREE.Matrix4().makeScale( 7, 7, 7 ) );
+
+    stemGeometry.applyMatrix4( defaultTransform );
+    blossomGeometry.applyMatrix4( defaultTransform );
+
+    stemMaterial = _stemMesh.material;
+    blossomMaterial = _blossomMesh.material;
+
+    stemMesh = new THREE.InstancedMesh( stemGeometry, stemMaterial, count );
+    blossomMesh = new THREE.InstancedMesh( blossomGeometry, blossomMaterial, count );
+
+    // Assign random colors to the blossoms.
+    const color = new THREE.Color();
+    const blossomPalette = [ 0xF20587, 0xF2D479, 0xF2C879, 0xF2B077, 0xF24405 ];
+
+    for ( let i = 0; i < count; i ++ ) {
+
+        color.setHex( blossomPalette[ Math.floor( Math.random() * blossomPalette.length ) ] );
+        blossomMesh.setColorAt( i, color );
+
+    }
+
+    // Instance matrices will be updated every frame.
+    stemMesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+    blossomMesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+
+    resample();
+
+    init();
+    animate();
+
+} );
+
+function init() {
+
+    camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+    camera.position.set( 25, 25, 25 );
+    camera.lookAt( 0, 0, 0 );
+
+    //
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color( api.backgroundColor );
+
+    const pointLight = new THREE.PointLight( 0xAA8899, 0.75 );
+    pointLight.position.set( 50, - 25, 75 );
+    scene.add( pointLight );
+
+    scene.add( new THREE.HemisphereLight() );
+
+    //
+
+    scene.add( stemMesh );
+    scene.add( blossomMesh );
+
+    scene.add( surface );
+
+    //
+
+    const gui = new GUI();
+    gui.add( api, 'count', 0, count ).onChange( function () {
+
+        stemMesh.count = api.count;
+        blossomMesh.count = api.count;
+
+    } );
+
+    // gui.addColor( api, 'backgroundColor' ).onChange( function () {
+
+    // 	scene.background.setHex( api.backgroundColor );
+
+    // } );
+
+    // gui.addColor( api, 'surfaceColor' ).onChange( function () {
+
+    // 	surfaceMaterial.color.setHex( api.surfaceColor );
+
+    // } );
+
+    gui.add( api, 'distribution' ).options( [ 'random', 'weighted' ] ).onChange( resample );
+    gui.add( api, 'resample' );
+
+    //
+
+    renderer = new THREE.WebGLRenderer( { antialias: true } );
+    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    document.body.appendChild( renderer.domElement );
+
+    //
+
+    window.addEventListener( 'resize', onWindowResize );
+
+}
+
+function resample() {
+
+    const vertexCount = surface.geometry.getAttribute( 'position' ).count;
+
+    console.info( 'Sampling ' + count + ' points from a surface with ' + vertexCount + ' vertices...' );
+
+    //
+
+    console.time( '.build()' );
+
+    sampler = new MeshSurfaceSampler( surface )
+        .setWeightAttribute( api.distribution === 'weighted' ? 'uv' : null )
+        .build();
+
+    console.timeEnd( '.build()' );
+
+    //
+
+    console.time( '.sample()' );
+
+    for ( let i = 0; i < count; i ++ ) {
+
+        ages[ i ] = Math.random();
+        scales[ i ] = scaleCurve( ages[ i ] );
+
+        resampleParticle( i );
+
+    }
+
+    console.timeEnd( '.sample()' );
+
+    stemMesh.instanceMatrix.needsUpdate = true;
+    blossomMesh.instanceMatrix.needsUpdate = true;
+
+}
+
+function resampleParticle( i ) {
+
+    sampler.sample( _position, _normal );
+    _normal.add( _position );
+
+    dummy.position.copy( _position );
+    dummy.scale.set( scales[ i ], scales[ i ], scales[ i ] );
+    dummy.lookAt( _normal );
+    dummy.updateMatrix();
+
+    stemMesh.setMatrixAt( i, dummy.matrix );
+    blossomMesh.setMatrixAt( i, dummy.matrix );
+
+}
+
+function updateParticle( i ) {
+
+    // Update lifecycle.
+
+    ages[ i ] += 0.005;
+
+    if ( ages[ i ] >= 1 ) {
+
+        ages[ i ] = 0.001;
+        scales[ i ] = scaleCurve( ages[ i ] );
+
+        resampleParticle( i );
+
+        return;
+
+    }
+
+    // Update scale.
+
+    const prevScale = scales[ i ];
+    scales[ i ] = scaleCurve( ages[ i ] );
+    _scale.set( scales[ i ] / prevScale, scales[ i ] / prevScale, scales[ i ] / prevScale );
+
+    // Update transform.
+
+    stemMesh.getMatrixAt( i, dummy.matrix );
+    dummy.matrix.scale( _scale );
+    stemMesh.setMatrixAt( i, dummy.matrix );
+    blossomMesh.setMatrixAt( i, dummy.matrix );
+
+}
+
+function onWindowResize() {
+
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize( window.innerWidth, window.innerHeight );
+
+}
+
+//
+
+function animate() {
+
+    requestAnimationFrame( animate );
+
+    render();
+
+}
+
+function render() {
+
+    if ( stemMesh && blossomMesh ) {
+
+        const time = Date.now() * 0.001;
+
+        scene.rotation.x = Math.sin( time / 4 );
+        scene.rotation.y = Math.sin( time / 2 );
+
+        for ( let i = 0; i < api.count; i ++ ) {
+
+            updateParticle( i );
+
         }
-    })
-    
-    scene.add( plants )
-})
 
+        stemMesh.instanceMatrix.needsUpdate = true;
+        blossomMesh.instanceMatrix.needsUpdate = true;
 
-/**
- * Light
- */
-degubObject.topColor = 0xff0000
-degubObject.insetColor = 0xffffff
-degubObject.bottomColor = 0x750238
-const pointLight = new THREE.PointLight(degubObject.topColor, 1, 6, 2.6)
-// const pointLight = new THREE.PointLight(degubObject.topColor, 0.95, 20, 2)
-pointLight.position.y = 0.7
+    }
 
-const directionalLight = new THREE.PointLight(degubObject.insetColor, 0.01, 1, 10)
-directionalLight.position.y = 0
+    renderer.render( scene, camera );
 
-const bottomLight = new THREE.DirectionalLight(degubObject.bottomColor, 0.9)
-bottomLight.position.y = -2
-
-// light debug
-gui.addColor(degubObject, 'topColor').name('top color').onChange(() => {
-    pointLight.color.set( new THREE.Color(degubObject.topColor) )
-})
-gui.addColor(degubObject, 'insetColor').name('inset color').onChange(() => {
-    directionalLight.color.set( new THREE.Color(degubObject.insetColor) )
-})
-gui.addColor(degubObject, 'bottomColor').name('bottom color').onChange(() => {
-    bottomLight.color.set( new THREE.Color(degubObject.bottomColor) )
-})
-
-scene.add(directionalLight, pointLight, bottomLight)
-
-
-/**
- * Sizes
- */
-const sizes = {
-    width: window.innerWidth,
-    height: window.innerHeight
 }
-
-window.addEventListener('resize', () =>
-{
-    // Update sizes
-    sizes.width = window.innerWidth
-    sizes.height = window.innerHeight
-
-    // Update camera
-    camera.aspect = sizes.width / sizes.height
-    camera.updateProjectionMatrix()
-
-    // Update renderer
-    renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-
-    // Update effect composer
-    effectComposer.setSize(sizes.width, sizes.height)
-    effectComposer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-})
-
-/**
- * Camera
- */
-// Base camera
-const camera = new THREE.PerspectiveCamera(45, sizes.width / sizes.height, 0.1, 100)
-// camera.position.x = 4
-camera.position.y = 2
-camera.position.z = 6
-camera.lookAt(0, 0, 0)
-scene.add(camera)
-
-// Controls
-// const controls = new OrbitControls(camera, canvas)
-// controls.enableDamping = true
-
-/**
- * Renderer
- */
-const renderer = new THREE.WebGLRenderer({
-    canvas: canvas,
-    antialias: true
-})
-renderer.shadowMap.enabled = true
-renderer.shadowMap.type = THREE.PCFShadowMap
-renderer.physicallyCorrectLights = true
-renderer.outputEncoding = THREE.sRGBEncoding
-renderer.toneMapping = THREE.ReinhardToneMapping
-renderer.toneMappingExposure = 1.5
-renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-
-/**
- * Composer
- */
- let RenderTargetClass = null
-
- if(renderer.getPixelRatio() === 1 && renderer.capabilities.isWebGL2)
- {
-     RenderTargetClass = THREE.WebGLMultisampleRenderTarget
-     console.log('Using WebGLMultisampleRenderTarget')
- }
- else
- {
-     RenderTargetClass = THREE.WebGLRenderTarget
-     console.log('Using WebGLRenderTarget')
- }
- 
- const renderTarget = new RenderTargetClass(
-     800,
-     600,
-     {
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
-        format: THREE.RGBAFormat
-     }
- )
-// Effect composer
-const effectComposer = new EffectComposer(renderer, renderTarget)
-effectComposer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-effectComposer.setSize(sizes.width, sizes.height)
-
-// Render pass
-const renderPass = new RenderPass(scene, camera)
-effectComposer.addPass(renderPass)
-
-// Antialias pass
-if(renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2)
-{
-    const smaaPass = new SMAAPass()
-    effectComposer.addPass(smaaPass)
-
-    console.log('Using SMAA')
-}
-
-// Unreal Bloom pass
-console.log(UnrealBloomPass)
-const unrealBloomPass = new UnrealBloomPass()
-unrealBloomPass.enabled = false
-effectComposer.addPass(unrealBloomPass)
-
-unrealBloomPass.strength = 2
-unrealBloomPass.radius = 1
-unrealBloomPass.threshold = 0
-
-gui.add(unrealBloomPass, 'enabled')
-gui.add(unrealBloomPass, 'strength').min(0).max(2).step(0.001)
-gui.add(unrealBloomPass, 'radius').min(0).max(2).step(0.001)
-gui.add(unrealBloomPass, 'threshold').min(0).max(1).step(0.001)
-
-/**
- * Animate
- */
-const clock = new THREE.Clock()
-
-const tick = () =>
-{
-    const elapsedTime = clock.getElapsedTime()
-
-    // Update controls
-    // controls.update()
-
-    // Render
-    // renderer.render(scene, camera)
-    effectComposer.render()
-
-    // Call tick again on the next frame
-    window.requestAnimationFrame(tick)
-}
-
-tick()
