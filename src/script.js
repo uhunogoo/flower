@@ -1,3 +1,4 @@
+import './style.css'
 import * as THREE from 'three';
 
 import { MeshSurfaceSampler } from 'three/examples/jsm/math/MeshSurfaceSampler'
@@ -29,8 +30,8 @@ const _position = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _scale = new THREE.Vector3();
 
-// let surfaceGeometry = new THREE.BoxGeometry( 10, 10, 10 ).toNonIndexed();
-const surfaceGeometry = new THREE.TorusKnotGeometry( 10, 3, 100, 16 ).toNonIndexed();
+// let surfaceGeometry = new THREE.BoxGeometry( 20, 20, 20, 10, 10, 10 ).toNonIndexed();
+let surfaceGeometry = new THREE.PlaneBufferGeometry( 35, 35, 20, 20 ).toNonIndexed();
 const surfaceMaterial = new THREE.MeshLambertMaterial( { color: api.surfaceColor, wireframe: false } );
 const surface = new THREE.Mesh( surfaceGeometry, surfaceMaterial );
 
@@ -96,11 +97,9 @@ loader.load( 'flower.glb', function ( gltf ) {
 
 function init() {
 
-    camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
-    camera.position.set( 25, 25, 25 );
-    camera.lookAt( 0, 0, 0 );
+    camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 100 )
+    camera.position.set( 0, 0, 50 )
 
-    //
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color( api.backgroundColor );
@@ -128,25 +127,12 @@ function init() {
 
     } );
 
-    // gui.addColor( api, 'backgroundColor' ).onChange( function () {
-
-    // 	scene.background.setHex( api.backgroundColor );
-
-    // } );
-
-    // gui.addColor( api, 'surfaceColor' ).onChange( function () {
-
-    // 	surfaceMaterial.color.setHex( api.surfaceColor );
-
-    // } );
-
     gui.add( api, 'distribution' ).options( [ 'random', 'weighted' ] ).onChange( resample );
     gui.add( api, 'resample' );
 
-    //
 
     renderer = new THREE.WebGLRenderer( { antialias: true } );
-    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.setPixelRatio( Math.min(2, window.devicePixelRatio) );
     renderer.setSize( window.innerWidth, window.innerHeight );
     document.body.appendChild( renderer.domElement );
 
@@ -162,19 +148,9 @@ function resample() {
 
     console.info( 'Sampling ' + count + ' points from a surface with ' + vertexCount + ' vertices...' );
 
-    //
-
-    console.time( '.build()' );
-
     sampler = new MeshSurfaceSampler( surface )
         .setWeightAttribute( api.distribution === 'weighted' ? 'uv' : null )
         .build();
-
-    console.timeEnd( '.build()' );
-
-    //
-
-    console.time( '.sample()' );
 
     for ( let i = 0; i < count; i ++ ) {
 
@@ -184,8 +160,6 @@ function resample() {
         resampleParticle( i );
 
     }
-
-    console.timeEnd( '.sample()' );
 
     stemMesh.instanceMatrix.needsUpdate = true;
     blossomMesh.instanceMatrix.needsUpdate = true;
@@ -208,9 +182,6 @@ function resampleParticle( i ) {
 }
 
 function updateParticle( i ) {
-
-    // Update lifecycle.
-
     ages[ i ] += 0.005;
 
     if ( ages[ i ] >= 1 ) {
@@ -225,13 +196,11 @@ function updateParticle( i ) {
     }
 
     // Update scale.
-
     const prevScale = scales[ i ];
     scales[ i ] = scaleCurve( ages[ i ] );
     _scale.set( scales[ i ] / prevScale, scales[ i ] / prevScale, scales[ i ] / prevScale );
 
     // Update transform.
-
     stemMesh.getMatrixAt( i, dummy.matrix );
     dummy.matrix.scale( _scale );
     stemMesh.setMatrixAt( i, dummy.matrix );
@@ -251,33 +220,20 @@ function onWindowResize() {
 //
 
 function animate() {
-
     requestAnimationFrame( animate );
-
     render();
-
 }
 
 function render() {
-
     if ( stemMesh && blossomMesh ) {
 
         const time = Date.now() * 0.001;
-
-        scene.rotation.x = Math.sin( time / 4 );
-        scene.rotation.y = Math.sin( time / 2 );
-
         for ( let i = 0; i < api.count; i ++ ) {
-
             updateParticle( i );
-
         }
-
         stemMesh.instanceMatrix.needsUpdate = true;
         blossomMesh.instanceMatrix.needsUpdate = true;
-
     }
-
     renderer.render( scene, camera );
 
 }
