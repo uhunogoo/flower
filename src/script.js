@@ -49,7 +49,7 @@ gltfLoader.setDRACOLoader(dracoLoader)
  */
 let mixer = null
 let plants = new THREE.Group()
-gltfLoader.load('plants.gltf', (model) => {
+gltfLoader.load('plants.glb', (model) => {
     let flower = model.scene.children[0]
     console.log(flower);
     flower.position.y = -1
@@ -89,12 +89,12 @@ gltfLoader.load('plants.gltf', (model) => {
  */
 degubObject.topColor = 0xff0000
 degubObject.insetColor = 0xffffff
-degubObject.bottomColor = 0x750238
-const pointLight = new THREE.PointLight(degubObject.topColor, 1, 6, 2.6)
-// const pointLight = new THREE.PointLight(degubObject.topColor, 0.95, 20, 2)
+degubObject.bottomColor = 0x000000
+// const pointLight = new THREE.PointLight(degubObject.topColor, 1, 6, 2.6)
+const pointLight = new THREE.PointLight(degubObject.topColor, 0.5, 10, 4)
 pointLight.position.y = 0.7
 
-const directionalLight = new THREE.PointLight(degubObject.insetColor, 0.01, 1, 10)
+const directionalLight = new THREE.PointLight(degubObject.insetColor, 0.01, 10, 10)
 directionalLight.position.y = 0
 
 const bottomLight = new THREE.DirectionalLight(degubObject.bottomColor, 0.9)
@@ -218,7 +218,7 @@ if(renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2)
 // Unreal Bloom pass
 console.log(UnrealBloomPass)
 const unrealBloomPass = new UnrealBloomPass()
-unrealBloomPass.enabled = false
+unrealBloomPass.enabled = true
 effectComposer.addPass(unrealBloomPass)
 
 unrealBloomPass.strength = 2
