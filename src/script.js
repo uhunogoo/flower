@@ -51,6 +51,7 @@ let mixer = null
 let plants = new THREE.Group()
 gltfLoader.load('plants.gltf', (model) => {
     let flower = model.scene.children[0]
+    console.log(flower);
     flower.position.y = -1
 
     mixer = new THREE.AnimationMixer(model.scene)
@@ -86,17 +87,17 @@ gltfLoader.load('plants.gltf', (model) => {
 /**
  * Light
  */
-degubObject.topColor = 0xff3b00
+degubObject.topColor = 0xff0000
 degubObject.insetColor = 0xffffff
 degubObject.bottomColor = 0x750238
-const pointLight = new THREE.PointLight(degubObject.topColor, 1, 2, 0.6)
+const pointLight = new THREE.PointLight(degubObject.topColor, 1, 6, 2.6)
 // const pointLight = new THREE.PointLight(degubObject.topColor, 0.95, 20, 2)
 pointLight.position.y = 0.7
 
-const directionalLight = new THREE.PointLight(degubObject.insetColor, 0.01, 2, 10)
+const directionalLight = new THREE.PointLight(degubObject.insetColor, 0.01, 1, 10)
 directionalLight.position.y = 0
 
-const bottomLight = new THREE.DirectionalLight(degubObject.bottomColor, 0.7)
+const bottomLight = new THREE.DirectionalLight(degubObject.bottomColor, 0.9)
 bottomLight.position.y = -2
 
 // light debug
@@ -165,9 +166,9 @@ const renderer = new THREE.WebGLRenderer({
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFShadowMap
 renderer.physicallyCorrectLights = true
-// renderer.outputEncoding = THREE.sRGBEncoding
+renderer.outputEncoding = THREE.sRGBEncoding
 renderer.toneMapping = THREE.ReinhardToneMapping
-// renderer.toneMappingExposure = 1.5
+renderer.toneMappingExposure = 1.5
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
@@ -217,7 +218,7 @@ if(renderer.getPixelRatio() === 1 && !renderer.capabilities.isWebGL2)
 // Unreal Bloom pass
 console.log(UnrealBloomPass)
 const unrealBloomPass = new UnrealBloomPass()
-unrealBloomPass.enabled = true
+unrealBloomPass.enabled = false
 effectComposer.addPass(unrealBloomPass)
 
 unrealBloomPass.strength = 2
